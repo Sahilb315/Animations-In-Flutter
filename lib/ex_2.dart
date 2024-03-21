@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:math' show pi;
+
 
 enum CircleSide { left, right }
 
-extension ToPath on CircleSide {
+extension on CircleSide {
   Path toPath(Size size) {
-    final path = Path();
+    final path = Path();  
 
     late Offset offset;
     late bool clockwiseOrNot;
@@ -42,6 +44,10 @@ extension ToPath on CircleSide {
   }
 }
 
+extension on VoidCallback {
+  Future<void> delayed(Duration duration) => Future.delayed(duration, this);
+}
+
 class HalfCircleClipper extends CustomClipper<Path> {
   final CircleSide side;
 
@@ -58,37 +64,155 @@ class HalfCircleClipper extends CustomClipper<Path> {
 class Example2 extends StatefulWidget {
   const Example2({super.key});
 
-  //! Half a circle(180 degress) is pi & 90 degress is pi/2
   @override
   State<Example2> createState() => _Example2State();
 }
 
-class _Example2State extends State<Example2> {
+class _Example2State extends State<Example2> with TickerProviderStateMixin {
+  //! Half a circle(180 degress) is pi & 90 degress is pi/2
+  //* In Flutter the canvas is rotated so it starts at the TOP Left of the screen
+
+  late AnimationController _antiClockwiseRotationController;
+  late Animation<double> _antiClockwiseRotationAnimation;
+
+  late AnimationController _flipController;
+  late Animation<double> _flipAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _antiClockwiseRotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    );
+    _antiClockwiseRotationAnimation = Tween<double>(
+      begin: 0,
+
+      ///? End is in negative as the canvas in flutter is rotated so when we want to rotate the Circle 90 degree
+      ///? it would be -90 degree in the canvas
+      end: -(pi / 2),
+    ).animate(
+      CurvedAnimation(
+        parent: _antiClockwiseRotationController,
+        curve: Curves.bounceOut,
+      ),
+    );
+
+    _flipController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    );
+
+    _flipAnimation = Tween<double>(
+      begin: 0,
+      end: pi,
+    ).animate(
+      CurvedAnimation(
+        parent: _flipController,
+        curve: Curves.bounceOut,
+      ),
+    );
+    // Calls listener every time the status of the animation changes.
+    _antiClockwiseRotationController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _flipAnimation = Tween<double>(
+          begin: _flipAnimation.value,
+          end: _flipAnimation.value + pi,
+        ).animate(
+          CurvedAnimation(
+            parent: _flipController,
+            curve: Curves.bounceOut,
+          ),
+        );
+        _flipController
+          ..reset()
+          ..forward();
+      }
+    });
+    _flipController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _antiClockwiseRotationAnimation = Tween<double>(
+          begin: _antiClockwiseRotationAnimation.value,
+          end: _antiClockwiseRotationAnimation.value + -(pi / 2),
+        ).animate(
+          CurvedAnimation(
+            parent: _antiClockwiseRotationController,
+            curve: Curves.bounceOut,
+          ),
+        );
+        _antiClockwiseRotationController
+          ..reset()
+          ..forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _antiClockwiseRotationController.dispose();
+    _flipController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    _antiClockwiseRotationController
+      ..reset()
+      ..forward.delayed(const Duration(seconds: 1));
+
     return Scaffold(
       backgroundColor: Colors.grey.shade800,
       body: SafeArea(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ClipPath(
-              clipper: const HalfCircleClipper(side: CircleSide.left),
-              child: Container(
-                height: 150,
-                width: 150,
-                color: const Color(0xff0057b7),
-              ),
-            ),
-            ClipPath(
-              clipper: const HalfCircleClipper(side: CircleSide.right),
-              child: Container(
-                height: 150,
-                width: 150,
-                color: const Color(0xffffd700),
-              ),
-            ),
-          ],
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _antiClockwiseRotationController,
+            builder: (context, child) {
+              return Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..rotateZ(_antiClockwiseRotationAnimation.value),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    AnimatedBuilder(
+                      animation: _flipController,
+                      builder: (context, child) => Transform(
+                        alignment: Alignment.centerRight,
+                        transform: Matrix4.identity()
+                          ..rotateY(_flipAnimation.value),
+                        child: ClipPath(
+                          clipper:
+                              const HalfCircleClipper(side: CircleSide.left),
+                          child: Container(
+                            height: 150,
+                            width: 150,
+                            color: const Color(0xff0057b7),
+                          ),
+                        ),
+                      ),
+                    ),
+                    AnimatedBuilder(
+                      animation: _flipAnimation,
+                      builder: (context, child) => Transform(
+                        alignment: Alignment.centerLeft,
+                        transform: Matrix4.identity()
+                          ..rotateY(_flipAnimation.value),
+                        child: ClipPath(
+                          clipper:
+                              const HalfCircleClipper(side: CircleSide.right),
+                          child: Container(
+                            height: 150,
+                            width: 150,
+                            color: const Color(0xffffd700),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
